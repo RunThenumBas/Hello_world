@@ -41,10 +41,17 @@ indicators, and prints a report for you to read and act on manually.
    STRONG SELL / SELL / HOLD / BUY / STRONG BUY label with a rationale.
 5. `trading_advisor/report.py` -- renders everything as a Markdown report,
    sorted by score within each sector.
-6. `trading_advisor/dashboard.py` -- renders the same data as a self-contained,
-   interactive HTML dashboard (filter by sector/signal, search, sort, expand
-   a row for the full rationale). No server, no build step -- just open the
-   file in a browser.
+6. `trading_advisor/dashboard.py` -- renders the same data as an interactive
+   HTML dashboard (filter by sector/signal, search, sort, expand a row for
+   the full rationale). `--html` writes it as a plain static file; the
+   desktop server (below) serves a live version with Hold checkboxes, a
+   Refresh button, and AI research for held stocks.
+7. `trading_advisor/server.py` + `trading_advisor/holdings.py` +
+   `trading_advisor/research.py` -- the desktop app. A local Flask server
+   (127.0.0.1 only) that serves the live dashboard, persists which stocks
+   you've marked "held," and on Refresh re-scores everything and runs
+   AI-assisted long-term-hold research (via Claude + live web search) for
+   held stocks specifically.
 
 ### Usage
 
@@ -70,6 +77,69 @@ python -m trading_advisor --demo --html reports/dashboard.html
 The dashboard (`--html`) opens with a KPI row (counts by signal), a filter bar
 (sector, signal, ticker search), and a sortable table per sector. Click
 **Details** on any row to expand its full rationale and risk notes.
+
+### Desktop app: live dashboard with Holdings + AI research
+
+This runs a small local server instead of a one-off static file, so the page
+in your browser has a **Refresh** button and **Hold** checkboxes that actually
+do something.
+
+**Setup (macOS):**
+
+```bash
+pip install -r requirements.txt
+```
+
+Then double-click `launch/Trading Advisor.command`. First run creates a
+virtual environment and installs dependencies (~1 minute); after that it
+starts instantly. It opens your browser to `http://127.0.0.1:8787/` and keeps
+running as long as that Terminal window is open -- close it (or Ctrl+C) to
+stop the server. To make it a real desktop icon: drag `Trading Advisor.command`
+onto your Desktop (or right-click -> Make Alias and drag the alias there); to
+give it a custom icon, select an image, Cmd+C it, then Get Info on the
+`.command` file, click its icon in the top-left of the Info panel, and Cmd+V.
+
+Not on macOS? Run the server directly instead of using the launcher:
+
+```bash
+python -m trading_advisor.server            # opens your browser automatically
+python -m trading_advisor.server --demo     # offline/synthetic data
+python -m trading_advisor.server --port 9000 --no-browser
+```
+
+**What Refresh does:** re-fetches live prices and recomputes every signal
+(free, no API key needed) -- and for any ticker you've checked as **held**,
+also asks Claude to research it as a long-term hold (see below). The server
+only ever binds to `127.0.0.1` -- it's not reachable from your network.
+
+**Holdings ("so they don't disappear"):** check a ticker's box anywhere in
+the dashboard (or type a ticker into the **+ Add** box in **My Holdings**,
+for anything outside the curated sector lists) and it's saved to
+`~/.trading_advisor/holdings.json` -- pinned in the always-visible **My
+Holdings** section at the top, immune to the sector/signal filters, and
+persisted across restarts. Uncheck it to remove it.
+
+**AI long-term-hold research (held stocks only, on Refresh):** requires an
+Anthropic API key. Either export it:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+or create a `.env` file in the repo root (already gitignored):
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Without a key, Refresh still works -- held stocks just show "ANTHROPIC_API_KEY
+is not set" instead of a research note, and every technical signal keeps
+updating normally. With a key, each held ticker gets a short note (thesis,
+recent developments grounded in live web search, key risks, what would change
+the picture) using Claude Opus 5 -- a few cents per held ticker per refresh,
+only for stocks you've explicitly checked, never for the whole watchlist.
+This is informational research, not investment advice, and no trades are
+ever placed.
 
 ### Extending it
 

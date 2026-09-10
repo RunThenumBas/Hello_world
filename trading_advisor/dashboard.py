@@ -103,8 +103,24 @@ body {
   gap: 22px;
 }
 
+.header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .app-header h1 { font-size: 1.6rem; margin: 0 0 4px; text-wrap: balance; }
 .app-header .meta { color: var(--ink-secondary); font-size: 0.9rem; margin: 0; }
+.refresh-control { display: flex; align-items: center; gap: 10px; }
+.refresh-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+  cursor: pointer;
+}
+.refresh-btn:disabled { opacity: 0.6; cursor: default; }
+.refresh-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.refresh-status { font-size: 0.8rem; color: var(--sell-text); }
 .demo-flag {
   display: inline-block;
   margin-left: 8px;
@@ -223,11 +239,25 @@ th.sort-asc .sort-btn::after { content: "▲"; }
 th.sort-desc .sort-btn::after { content: "▼"; }
 
 tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.88rem; vertical-align: middle; }
-tbody tr.row:last-of-type td, tbody tr.detail-row:last-of-type td { border-bottom: none; }
+tbody tr.row:last-of-type td, tbody tr.held-row:last-of-type td, tbody tr.detail-row:last-of-type td { border-bottom: none; }
 .cell-ticker { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 600; }
 .num { font-variant-numeric: tabular-nums; text-align: right; }
 .num-pos { color: var(--buy-text); }
 .num-neg { color: var(--sell-text); }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.cell-hold { width: 1%; }
+.hold-checkbox { display: inline-flex; cursor: pointer; }
+.hold-toggle { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+.hold-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .badge {
   display: inline-flex;
@@ -273,6 +303,63 @@ tbody tr.row:last-of-type td, tbody tr.detail-row:last-of-type td { border-botto
 .risk-notes .risk { color: var(--sell-text); }
 
 .no-match-msg, .empty-row td { padding: 16px; text-align: center; color: var(--ink-muted); font-size: 0.85rem; }
+
+.pinned-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 14px 4px;
+  background: var(--accent-bg);
+}
+.pinned-section .table-wrap { background: var(--surface); }
+.add-holding-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.add-holding-form input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-primary);
+}
+.add-holding-form button {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.research-block {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--ink-secondary);
+}
+.research-heading { font-weight: 600; color: var(--ink-primary); margin: 0 0 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.research-tag {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.research-block p { margin: 0 0 6px; }
+.research-block p:last-child { margin-bottom: 0; }
+.research-error { color: var(--sell-text); }
+.research-meta { font-size: 0.75rem; color: var(--ink-muted); margin-top: 4px; }
 
 footer {
   border-top: 1px solid var(--border);
@@ -375,7 +462,7 @@ _SCRIPT = """
 
   document.querySelectorAll('.expand-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const row = btn.closest('.row');
+      const row = btn.closest('tr');
       const detail = detailRowFor(row);
       if (!detail) return;
       const expanded = btn.getAttribute('aria-expanded') === 'true';
@@ -422,6 +509,83 @@ _SCRIPT = """
       });
     });
   });
+
+  const holdToggles = Array.from(document.querySelectorAll('.hold-toggle'));
+  holdToggles.forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const nextHeld = cb.checked;
+      cb.disabled = true;
+      fetch('/api/holdings/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: cb.dataset.ticker, held: nextHeld }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error('Request failed');
+          return r.json();
+        })
+        .then(() => {
+          window.location.reload();
+        })
+        .catch(() => {
+          cb.disabled = false;
+          cb.checked = !nextHeld;
+          window.alert('Could not save that change. Please try again.');
+        });
+    });
+  });
+
+  const addForm = document.getElementById('add-holding-form');
+  if (addForm) {
+    addForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const input = document.getElementById('add-holding-input');
+      const ticker = input.value.trim().toUpperCase();
+      if (!ticker) return;
+      fetch('/api/holdings/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error('Request failed');
+          return r.json();
+        })
+        .then(() => {
+          window.location.reload();
+        })
+        .catch(() => {
+          window.alert('Could not add that ticker. Please try again.');
+        });
+    });
+  }
+
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      const status = document.getElementById('refresh-status');
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Refreshing…';
+      if (status) {
+        status.hidden = true;
+        status.textContent = '';
+      }
+      fetch('/api/refresh', { method: 'POST' })
+        .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
+        .then(({ ok, body }) => {
+          if (!ok) throw new Error((body && body.error) || 'Refresh failed');
+          window.location.reload();
+        })
+        .catch((err) => {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = '⟳ Refresh';
+          if (status) {
+            status.hidden = false;
+            status.textContent = err.message;
+          }
+        });
+    });
+  }
 
   applyFilters();
 })();
@@ -476,7 +640,66 @@ def _kpi_row_html(counts: dict[str, int]) -> str:
     return f'<div class="kpi-row">{"".join(tiles)}</div>'
 
 
-def _row_html(sector_name: str, s: Suggestion) -> str:
+def _research_block_html(research: dict | None) -> str:
+    if not research:
+        return ""
+    error = research.get("error")
+    text = research.get("text")
+    generated_at = research.get("generated_at", "")
+    model = research.get("model", "")
+
+    if not text:
+        message = error or "Research not available yet."
+        return (
+            '<div class="research-block">'
+            '<p class="research-heading">Long-term hold research</p>'
+            f'<p class="research-error">{escape(message)}</p>'
+            "</div>"
+        )
+
+    paragraphs = "".join(f"<p>{escape(p)}</p>" for p in text.split("\n") if p.strip())
+    return (
+        '<div class="research-block">'
+        '<p class="research-heading">Long-term hold research'
+        '<span class="research-tag">AI-generated, informational only</span></p>'
+        f"{paragraphs}"
+        f'<p class="research-meta">Researched {escape(generated_at)} &middot; {escape(model)}</p>'
+        "</div>"
+    )
+
+
+def _table_header_html(interactive: bool, sortable: bool = True) -> str:
+    checkbox_th = '<th><span class="visually-hidden">Hold</span></th>' if interactive else ""
+
+    def col(label: str, key: str) -> str:
+        if sortable:
+            return f'<th><button class="sort-btn" type="button" data-sort="{key}">{label}</button></th>'
+        return f"<th>{label}</th>"
+
+    return f"""
+          <thead>
+            <tr>
+              {checkbox_th}
+              {col("Ticker", "ticker")}
+              <th>Signal</th>
+              {col("Score", "score")}
+              {col("3M", "pct3m")}
+              {col("RSI", "rsi")}
+              <th></th>
+            </tr>
+          </thead>
+    """
+
+
+def _row_html(
+    sector_name: str,
+    s: Suggestion,
+    *,
+    interactive: bool = False,
+    held: bool = False,
+    row_class: str = "row",
+    research: dict | None = None,
+) -> str:
     ticker = escape(s.ticker)
     sector_attr = escape(sector_name)
     label_attr = escape(s.label)
@@ -488,10 +711,25 @@ def _row_html(sector_name: str, s: Suggestion) -> str:
     rationale_items = "".join(f"<li>{escape(note)}</li>" for note in s.rationale)
     risk_items = "".join(f'<li class="risk">⚠ {escape(note)}</li>' for note in s.risk_notes)
     risk_block = f'<ul class="risk-notes">{risk_items}</ul>' if risk_items else ""
+    research_block = _research_block_html(research) if interactive else ""
+
+    checkbox_cell = ""
+    colspan = 6
+    if interactive:
+        checked = "checked" if held else ""
+        checkbox_cell = (
+            '<td class="cell-hold">'
+            f'<label class="hold-checkbox"><input type="checkbox" class="hold-toggle" '
+            f'data-ticker="{ticker}" {checked}>'
+            f'<span class="visually-hidden">Hold {ticker}</span></label>'
+            "</td>"
+        )
+        colspan = 7
 
     return (
-        f'<tr class="row" data-sector="{sector_attr}" data-label="{label_attr}" data-ticker="{ticker}" '
+        f'<tr class="{row_class}" data-sector="{sector_attr}" data-label="{label_attr}" data-ticker="{ticker}" '
         f'data-score="{s.score:.1f}" data-pct3m="{s.pct_change_3m:.4f}" data-rsi="{rsi_sort:.1f}">'
+        f"{checkbox_cell}"
         f'<td class="cell-ticker">{ticker}</td>'
         f"<td>{_badge_html(s.label)}</td>"
         f'<td class="cell-score">{_score_bar_html(s.score)}</td>'
@@ -500,18 +738,35 @@ def _row_html(sector_name: str, s: Suggestion) -> str:
         f'<td><button class="expand-btn" type="button" aria-expanded="false" aria-controls="{detail_id}">Details</button></td>'
         "</tr>"
         f'<tr class="detail-row" id="{detail_id}" hidden>'
-        '<td colspan="6"><div class="detail-panel">'
-        f'<ul class="rationale">{rationale_items}</ul>{risk_block}'
+        f'<td colspan="{colspan}"><div class="detail-panel">'
+        f'<ul class="rationale">{rationale_items}</ul>{risk_block}{research_block}'
         "</div></td></tr>"
     )
 
 
-def _sector_section_html(sector: Sector, suggestions: list[Suggestion]) -> str:
+def _sector_section_html(
+    sector: Sector,
+    suggestions: list[Suggestion],
+    *,
+    interactive: bool = False,
+    held_map: dict | None = None,
+) -> str:
+    held_map = held_map or {}
     ranked = sorted(suggestions, key=lambda s: s.score, reverse=True)
+    colspan = 7 if interactive else 6
     if ranked:
-        rows = "".join(_row_html(sector.name, s) for s in ranked)
+        rows = "".join(
+            _row_html(
+                sector.name,
+                s,
+                interactive=interactive,
+                held=held_map.get(s.ticker, {}).get("held", False),
+                research=held_map.get(s.ticker, {}).get("research"),
+            )
+            for s in ranked
+        )
     else:
-        rows = '<tr class="empty-row"><td colspan="6">No data available for this sector right now.</td></tr>'
+        rows = f'<tr class="empty-row"><td colspan="{colspan}">No data available for this sector right now.</td></tr>'
 
     return f"""
     <section class="sector-section" data-sector-section="{escape(sector.name)}">
@@ -521,16 +776,7 @@ def _sector_section_html(sector: Sector, suggestions: list[Suggestion]) -> str:
       </div>
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th><button class="sort-btn" type="button" data-sort="ticker">Ticker</button></th>
-              <th>Signal</th>
-              <th><button class="sort-btn" type="button" data-sort="score">Score</button></th>
-              <th><button class="sort-btn" type="button" data-sort="pct3m">3M</button></th>
-              <th><button class="sort-btn" type="button" data-sort="rsi">RSI</button></th>
-              <th></th>
-            </tr>
-          </thead>
+          {_table_header_html(interactive)}
           <tbody>
             {rows}
           </tbody>
@@ -539,6 +785,60 @@ def _sector_section_html(sector: Sector, suggestions: list[Suggestion]) -> str:
       </div>
     </section>
     """
+
+
+def _holdings_section_html(holdings_suggestions: dict[str, Suggestion], held_map: dict) -> str:
+    tickers = sorted(holdings_suggestions.keys())
+    if tickers:
+        rows = "".join(
+            _row_html(
+                "My Holdings",
+                holdings_suggestions[ticker],
+                interactive=True,
+                held=True,
+                row_class="held-row",
+                research=held_map.get(ticker, {}).get("research"),
+            )
+            for ticker in tickers
+        )
+    else:
+        rows = (
+            '<tr class="empty-row"><td colspan="7">'
+            "No holdings saved yet -- check a box below, or add a ticker here."
+            "</td></tr>"
+        )
+
+    return f"""
+    <section class="pinned-section" data-pinned-section="holdings">
+      <div class="sector-heading">
+        <h2>My Holdings</h2>
+        <p>Pinned regardless of filters. Checked tickers get long-term-hold research when you click Refresh.</p>
+      </div>
+      <form class="add-holding-form" id="add-holding-form">
+        <input type="text" id="add-holding-input" placeholder="Add ticker (e.g. AAPL)" aria-label="Add ticker to holdings" autocomplete="off">
+        <button type="submit">+ Add</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          {_table_header_html(interactive=True, sortable=False)}
+          <tbody>
+            {rows}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    """
+
+
+def _refresh_control_html(interactive: bool) -> str:
+    if not interactive:
+        return ""
+    return (
+        '<div class="refresh-control">'
+        '<button id="refresh-btn" type="button" class="refresh-btn">⟳ Refresh</button>'
+        '<span id="refresh-status" class="refresh-status" role="alert" hidden></span>'
+        "</div>"
+    )
 
 
 def _sector_chips_html(sectors: list[Sector]) -> str:
@@ -565,16 +865,33 @@ def _disclaimer_html() -> str:
     return f'<div class="disclaimer" role="note"><span class="disclaimer-icon" aria-hidden="true">ⓘ</span><p>{text}</p></div>'
 
 
-def _render_content(sector_suggestions: dict[Sector, list[Suggestion]], *, demo: bool, generated_at: str) -> str:
+def _render_content(
+    sector_suggestions: dict[Sector, list[Suggestion]],
+    *,
+    demo: bool,
+    generated_at: str,
+    interactive: bool = False,
+    holdings_suggestions: dict[str, Suggestion] | None = None,
+    held_map: dict | None = None,
+) -> str:
+    holdings_suggestions = holdings_suggestions or {}
+    held_map = held_map or {}
     sectors = list(sector_suggestions.keys())
     counts = _count_labels(sector_suggestions)
     demo_flag = '<span class="demo-flag">Demo data</span>' if demo else ""
-    sections = "".join(_sector_section_html(sector, suggestions) for sector, suggestions in sector_suggestions.items())
+    sections = "".join(
+        _sector_section_html(sector, suggestions, interactive=interactive, held_map=held_map)
+        for sector, suggestions in sector_suggestions.items()
+    )
+    holdings_section = _holdings_section_html(holdings_suggestions, held_map) if interactive else ""
 
     return f"""
 <div class="app">
   <header class="app-header">
-    <h1>{escape(_TITLE)}</h1>
+    <div class="header-top">
+      <h1>{escape(_TITLE)}</h1>
+      {_refresh_control_html(interactive)}
+    </div>
     <p class="meta">Generated {escape(generated_at)}{demo_flag}</p>
   </header>
 
@@ -589,6 +906,7 @@ def _render_content(sector_suggestions: dict[Sector, list[Suggestion]], *, demo:
   {_kpi_row_html(counts)}
 
   <main>
+    {holdings_section}
     {sections}
   </main>
 
@@ -607,19 +925,35 @@ def render_dashboard_html(
     demo: bool = False,
     embeddable: bool = False,
     generated_at: str | None = None,
+    interactive: bool = False,
+    holdings_suggestions: dict[str, Suggestion] | None = None,
+    held_map: dict | None = None,
 ) -> str:
     """Render the full dashboard.
 
     `embeddable=True` omits the <!doctype>/<html>/<head>/<body> wrapper and
     instead returns a flat title+style+content document -- the shape needed
     to publish this as a Claude Artifact, which supplies that wrapper itself.
+
+    `interactive=True` adds the "Hold" checkboxes, the pinned My Holdings
+    section, the add-ticker form, and the Refresh button -- all of which
+    talk to a running `trading_advisor.server` backend. Leave it False (the
+    default, used by the CLI's `--html` flag) for a read-only static file
+    with no backend to call.
     """
     if generated_at is None:
         from datetime import datetime, timezone
 
         generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    content = _render_content(sector_suggestions, demo=demo, generated_at=generated_at)
+    content = _render_content(
+        sector_suggestions,
+        demo=demo,
+        generated_at=generated_at,
+        interactive=interactive,
+        holdings_suggestions=holdings_suggestions,
+        held_map=held_map,
+    )
 
     if embeddable:
         return f"<title>{escape(_TITLE)}</title>\n<style>\n{_CSS}\n</style>\n{content}"
