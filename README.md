@@ -41,6 +41,10 @@ indicators, and prints a report for you to read and act on manually.
    STRONG SELL / SELL / HOLD / BUY / STRONG BUY label with a rationale.
 5. `trading_advisor/report.py` -- renders everything as a Markdown report,
    sorted by score within each sector.
+6. `trading_advisor/dashboard.py` -- renders the same data as a self-contained,
+   interactive HTML dashboard (filter by sector/signal, search, sort, expand
+   a row for the full rationale). No server, no build step -- just open the
+   file in a browser.
 
 ### Usage
 
@@ -55,7 +59,17 @@ python -m trading_advisor --sector quantum --out reports/quantum.md
 
 # Shorter/longer lookback window (anything yfinance accepts: 3mo, 6mo, 1y, 2y, ...)
 python -m trading_advisor --period 6mo
+
+# Visual dashboard -- writes an HTML file, then open it in your browser
+python -m trading_advisor --html reports/dashboard.html
+
+# Try it without a live network connection (synthetic data, clearly labeled "Demo data")
+python -m trading_advisor --demo --html reports/dashboard.html
 ```
+
+The dashboard (`--html`) opens with a KPI row (counts by signal), a filter bar
+(sector, signal, ticker search), and a sortable table per sector. Click
+**Details** on any row to expand its full rationale and risk notes.
 
 ### Extending it
 
@@ -63,11 +77,11 @@ python -m trading_advisor --period 6mo
 - **More signals** (e.g. news sentiment, earnings surprises, options flow):
   add a module alongside `indicators.py` and fold its output into
   `scoring.score_ticker`.
-- **Automation**: schedule `python -m trading_advisor --out reports/latest.md`
-  (e.g. via cron or a Claude Code Routine) to get a fresh report on a cadence.
-  It only ever writes a report file -- wiring it to an actual broker/execution
-  API is a deliberate next step you'd add yourself, not something this tool
-  does.
+- **Automation**: schedule `python -m trading_advisor --html reports/dashboard.html`
+  (e.g. via cron or a Claude Code Routine) to get a fresh dashboard on a
+  cadence. It only ever writes local files -- wiring it to an actual
+  broker/execution API is a deliberate next step you'd add yourself, not
+  something this tool does.
 
 ### Tests
 

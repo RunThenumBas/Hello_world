@@ -24,6 +24,8 @@ class Suggestion:
     label: str
     rationale: list[str]
     risk_notes: list[str]
+    rsi14: float
+    pct_change_3m: float
 
 
 def _trend_score(snap: IndicatorSnapshot) -> tuple[float, list[str]]:
@@ -131,4 +133,6 @@ def score_ticker(snap: IndicatorSnapshot, benchmark_snap: IndicatorSnapshot | No
         label=_label_for_score(total),
         rationale=rationale,
         risk_notes=_risk_notes(snap),
+        rsi14=snap.rsi14,
+        pct_change_3m=snap.pct_change_3m,
     )

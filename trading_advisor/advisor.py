@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from .data import DataUnavailableError, fetch_price_history
+from .demo_data import generate_demo_history
 from .indicators import compute_snapshot
 from .scoring import Suggestion, score_ticker
 from .watchlist import SECTORS, Sector
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 def build_report_data(
     sectors: tuple[Sector, ...] = SECTORS,
     period: str = "1y",
+    demo: bool = False,
 ) -> dict[Sector, list[Suggestion]]:
     snapshot_cache: dict[str, object] = {}
 
@@ -22,7 +24,7 @@ def build_report_data(
         if ticker in snapshot_cache:
             return snapshot_cache[ticker]
         try:
-            history = fetch_price_history(ticker, period=period)
+            history = generate_demo_history(ticker) if demo else fetch_price_history(ticker, period=period)
             snap = compute_snapshot(ticker, history)
         except DataUnavailableError as exc:
             logger.warning("Skipping %s: %s", ticker, exc)
